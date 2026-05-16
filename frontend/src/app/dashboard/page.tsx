@@ -75,23 +75,38 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
-    let socket: any;
+    let cancelled = false;
+
     (async () => {
       try {
         const { io } = await import("socket.io-client");
-        socket = io(SOCKET_URL, { 
+        if (cancelled) return;
+
+        const socket = io(SOCKET_URL, {
           transports: ["websocket", "polling"],
-          reconnectionAttempts: 5,
-          reconnectionDelay: 2000
+          reconnectionAttempts: 10,
+          reconnectionDelay: 1500,
+          timeout: 20000,
         });
         socketRef.current = socket;
 
         socket.on("connect", () => setIsOnline(true));
         socket.on("disconnect", () => setIsOnline(false));
-        socket.on("agent_thought", (t: any) => setThoughts(p => [...p, t]));
-        
+        socket.on("connect_error", (err: Error) => {
+          console.warn("Socket connect_error", err?.message || err);
+          setIsOnline(false);
+        });
+
+        socket.on("agent_thought", (t: any) =>
+          setThoughts((p) => [...p, t])
+        );
+
+        socket.on("memory_update", (payload: any) => {
+          if (payload?.matches?.length) setMemoryResults(payload.matches);
+        });
+
         socket.on("telemetry_update", (data: any) => {
-          setTelemetry(p => {
+          setTelemetry((p) => {
             const next = [...p];
             const newPoint = {
               timestamp: data.timestamp || Date.now() / 1000,
@@ -99,21 +114,25 @@ export default function Dashboard() {
                 [data.service_name || "System"]: {
                   cpu: data.cpu_usage || 20,
                   latency: data.latency,
-                  error_rate: data.status !== "healthy" ? 5 : 0
-                }
-              }
+                  error_rate: data.status !== "healthy" ? 5 : 0,
+                },
+              },
             };
             next.push(newPoint);
             return next.slice(-50);
           });
 
-          if (data.status !== "healthy" && status === "healthy") {
-            setStatus("incident");
-            setIncidentId("INC-" + Math.floor(Math.random()*10000));
-          } else if (data.status === "healthy" && status !== "healthy") {
-            setStatus("healthy");
-            setIncidentId(null);
-          }
+          setStatus((prev) => {
+            if (data.status !== "healthy" && prev === "healthy") {
+              setIncidentId("INC-" + Math.floor(Math.random() * 10000));
+              return "incident";
+            }
+            if (data.status === "healthy" && prev !== "healthy") {
+              setIncidentId(null);
+              return "healthy";
+            }
+            return prev;
+          });
         });
 
         socket.on("event", (e: any) => {
@@ -132,20 +151,38 @@ export default function Dashboard() {
     })();
 
     return () => {
-      if (socket) socket.disconnect();
+      cancelled = true;
+      if (socketRef.current) {
+        socketRef.current.removeAllListeners();
+        socketRef.current.disconnect();
+        socketRef.current = null;
+      }
     };
-  }, [selectedService, status]);
+  }, []);
 
   const triggerIncident = async (type: string) => {
     if (!selectedService) return;
     setIsBooting(true);
     setThoughts([]);
     try {
-      await fetch(apiUrl("/api/incidents/trigger"), {
+      const res = await fetch(apiUrl("/api/incidents/trigger"), {
         method: "POST",
         headers: authHeaders(token),
-        body: JSON.stringify({ service_id: selectedService.id, type })
+        body: JSON.stringify({ service_id: selectedService.id, type }),
       });
+      if (!res.ok) {
+        const errBody = await res.json().catch(() => ({}));
+        console.error("Incident trigger failed", res.status, errBody);
+        setThoughts((p) => [
+          ...p,
+          {
+            agent: "System",
+            content: `Could not trigger simulation (${res.status}). Check service ownership and backend logs.`,
+            timestamp: Date.now() / 1000,
+          },
+        ]);
+        return;
+      }
       setStatus("investigating");
     } catch (err) {
       console.error("Failed to trigger incident", err);

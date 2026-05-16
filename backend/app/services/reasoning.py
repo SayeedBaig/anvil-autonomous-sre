@@ -11,7 +11,7 @@ def _build_llm() -> Optional[Any]:
     """Construct LLM client if optional deps and API keys are available."""
     model_name = os.getenv("SENTINEL_MODEL", "gpt-4o")
     api_key = os.getenv("OPENAI_API_KEY")
-    google_key = os.getenv("GOOGLE_API_KEY")
+    google_key = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
 
     if api_key:
         try:

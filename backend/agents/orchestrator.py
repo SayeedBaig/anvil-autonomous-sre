@@ -10,6 +10,10 @@ from .extended_agents import SecurityAgent, DeploymentAgent, OptimizationAgent, 
 
 logger = logging.getLogger(__name__)
 
+# Delay between streamed agent thoughts (seconds). Short enough for realtime UX; nonzero for readable pacing.
+_THOUGHT_PACE_SEC = 0.45
+
+
 class AutonomousOrchestrator:
     def __init__(self, sio=None):
         self.sio = sio
@@ -29,16 +33,22 @@ class AutonomousOrchestrator:
         """
         agent_name = event.get("agent", "System")
         message = event.get("message", "Processing...")
-        logger.info(f"[{agent_name}] {message}")
-        
-        if self.sio:
-            await self.sio.emit('agent_thought', {
-                "agent": agent_name,
-                "content": message,
-                "timestamp": time.time()  # Numeric timestamp for frontend compatibility
-            })
-        # Narrative pacing for cinematic effect
-        await asyncio.sleep(1.8)
+        logger.info("[%s] %s", agent_name, message)
+
+        sio = getattr(self, "sio", None)
+        if sio:
+            try:
+                await sio.emit(
+                    "agent_thought",
+                    {
+                        "agent": agent_name,
+                        "content": message,
+                        "timestamp": time.time(),
+                    },
+                )
+            except Exception as e:
+                logger.error("[%s] Socket emit agent_thought failed: %s", agent_name, e)
+        await asyncio.sleep(_THOUGHT_PACE_SEC)
 
     async def run_incident_simulation(self, incident_type, service):
         """
@@ -85,17 +95,32 @@ class AutonomousOrchestrator:
             await self.learning.finalize()
             
             # 10. System Resolution
-            await self.emit_event({
-                "agent": "System",
-                "message": "Autonomous recovery workflow complete. All systems returning to baseline."
-            })
-            
+            logger.info("[Orchestrator] Recovery lifecycle complete; emitting executive summary.")
+            await self.emit_event(
+                {
+                    "agent": "ExecutiveSummary",
+                    "message": (
+                        "Incident closed: autonomous rollback executed; latency returned to baseline; "
+                        "causal chain and remediation committed to operational memory."
+                    ),
+                }
+            )
+
+            await self.emit_event(
+                {
+                    "agent": "System",
+                    "message": "Autonomous recovery workflow complete. All systems returning to baseline.",
+                }
+            )
+
             logger.info("ORCHESTRATION COMPLETE: All agents finished successfully.")
             return True
         except Exception as e:
-            logger.error(f"Orchestration Engine Failure: {str(e)}", exc_info=True)
-            await self.emit_event({
-                "agent": "System",
-                "message": f"CRITICAL: Autonomous loop halted due to engine failure: {str(e)}"
-            })
+            logger.error("Orchestration Engine Failure: %s", str(e), exc_info=True)
+            await self.emit_event(
+                {
+                    "agent": "System",
+                    "message": f"CRITICAL: Autonomous loop halted due to engine failure: {str(e)}",
+                }
+            )
             return False

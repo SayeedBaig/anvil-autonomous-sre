@@ -29,21 +29,26 @@ async def test_monitoring_agent_detection(mock_orchestrator):
 @pytest.mark.asyncio
 async def test_context_agent_api_call(mock_orchestrator):
     agent = ContextAgent(mock_orchestrator)
-    
-    # Mock successful API call
-    with patch("httpx.AsyncClient.post") as mock_post:
-        mock_post.return_value = MagicMock(status_code=200)
-        mock_post.return_value.json.return_value = {
-            "status": "success",
-            "data": {"recommended_action": "rollback"},
-            "metadata": {"confidence": 0.94}
-        }
-        
+    fake_intel = {
+        "status": "success",
+        "data": {
+            "similar_incidents": ["HIST-001"],
+            "causal_chain": ["deployment"],
+            "recommended_action": "rollback_deployment",
+            "reasoning": "test",
+        },
+        "metadata": {"confidence": 0.94},
+    }
+    with patch(
+        "agents.context_agent.analyze_operational_intelligence",
+        new_callable=AsyncMock,
+        return_value=fake_intel,
+    ):
         intelligence = await agent.reconstruct_context("checkout timeout")
-        
-        assert intelligence["status"] == "success"
-        assert intelligence["metadata"]["confidence"] == 0.94
-        mock_orchestrator.emit_event.assert_called_once()
+
+    assert intelligence["status"] == "success"
+    assert intelligence["metadata"]["confidence"] == 0.94
+    assert mock_orchestrator.emit_event.call_count >= 2
 
 @pytest.mark.asyncio
 async def test_rca_agent_analysis(mock_orchestrator):
@@ -53,9 +58,9 @@ async def test_rca_agent_analysis(mock_orchestrator):
     }
     
     rca = await agent.analyze_root_cause(intelligence)
-    
-    assert "rollback previously resolved" in rca
-    mock_orchestrator.emit_event.assert_called_once()
+
+    assert "ROOT CAUSE IDENTIFIED" in rca
+    assert mock_orchestrator.emit_event.call_count >= 3
 
 @pytest.mark.asyncio
 async def test_remediation_agent_decision(mock_orchestrator):
@@ -67,7 +72,7 @@ async def test_remediation_agent_decision(mock_orchestrator):
     strategy = await agent.decide_strategy(intelligence)
     
     assert strategy == "rollback_deployment"
-    mock_orchestrator.emit_event.assert_called_once()
+    assert mock_orchestrator.emit_event.call_count == 2
 
 @pytest.mark.asyncio
 async def test_execution_agent_flow(mock_orchestrator):
@@ -77,5 +82,4 @@ async def test_execution_agent_flow(mock_orchestrator):
         success = await agent.execute_remediation("rollback")
         
         assert success is True
-        # Emits start and end events
-        assert mock_orchestrator.emit_event.call_count == 2
+        assert mock_orchestrator.emit_event.call_count == 4

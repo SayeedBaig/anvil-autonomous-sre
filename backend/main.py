@@ -1,5 +1,9 @@
 import uvicorn
 import os
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from fastapi import FastAPI, WebSocket, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 import socketio
@@ -119,6 +123,19 @@ async def disconnect_service(
 
 # --- Incident Management ---
 
+def _log_orchestration_task(task: asyncio.Task) -> None:
+    try:
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is not None:
+            logger.error("Orchestration background task failed: %s", exc, exc_info=exc)
+    except asyncio.CancelledError:
+        return
+    except Exception as e:
+        logger.error("Orchestration task completion handler error: %s", e)
+
+
 @app.post("/api/incidents/trigger")
 async def trigger_incident(
     payload: dict, 
@@ -138,7 +155,8 @@ async def trigger_incident(
     observability.trigger_anomaly(service_id, anomaly_type)
     
     # Start autonomous recovery flow
-    asyncio.create_task(orchestrator.run_incident_simulation(anomaly_type, service.name))
+    t = asyncio.create_task(orchestrator.run_incident_simulation(anomaly_type, service.name))
+    t.add_done_callback(_log_orchestration_task)
     
     return {"status": "incident_triggered", "service": service.name}
 
@@ -184,30 +202,18 @@ async def operational_intelligence(
     current_user: models.User = Depends(get_current_active_user)
 ):
     """Deep analysis of incident context and causal reconstruction."""
-    query = payload.get("incident_description", "")
-    logger.info(f"[Intelligence] Performing deep analysis for: {query}")
-    
-    # Simulate intelligence processing
-    return {
-        "status": "success",
-        "data": {
-            "similar_incidents": ["HIST-001", "HIST-005"],
-            "causal_chain": ["deployment", "thread_leak", "latency_spike"],
-            "recommended_action": "rollback_deployment",
-            "reasoning": "High similarity (96%) with historical incident HIST-001 where a thread leak was resolved by rolling back v2.1.4."
-        },
-        "metadata": {
-            "confidence": 0.98,
-            "analysis_time_ms": 450,
-            "engine": "SENTINEL_BRAIN_V2",
-            "causal_chain_depth": 3
-        }
-    }
+    query = payload.get("incident_description") or payload.get("incident") or ""
+    logger.info(f"[Intelligence] Performing deep analysis for: {query} (user {current_user.id})")
+    return await analyze_operational_intelligence(query)
 
 # --- Lifecycle Management ---
 
 @app.on_event("startup")
 async def startup_event():
+    try:
+        init_db()
+    except Exception as e:
+        logger.error("Database initialization failed: %s", e, exc_info=True)
     asyncio.create_task(observability.start())
     logger.info("Sentinel SRE Engine initialized")
 

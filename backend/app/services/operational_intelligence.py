@@ -33,9 +33,12 @@ async def analyze_operational_intelligence(incident_description: str) -> Dict[st
                 },
             }
         )
-        if enriched and "Error in reasoning:" not in enriched:
+        is_simulated = isinstance(enriched, str) and enriched.startswith("Simulated Reasoning:")
+        if enriched and "Error in reasoning:" not in enriched and not is_simulated:
             reasoning_text = enriched
             logger.info("[OperationalIntelligence] LLM path returned enriched reasoning.")
+        elif is_simulated:
+            logger.info("[OperationalIntelligence] ReasoningService using built-in simulation (no external LLM).")
         else:
             logger.info("[OperationalIntelligence] Using deterministic reasoning (LLM unavailable or error path).")
     except Exception as e:

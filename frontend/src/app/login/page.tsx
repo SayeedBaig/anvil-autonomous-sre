@@ -29,7 +29,16 @@ export default function LoginPage() {
       if (res.ok) {
         login(data.access_token, data.user);
       } else {
-        setError(data.detail || "Authentication failed.");
+        const detail = data.detail;
+        const msg =
+          typeof detail === "string"
+            ? detail
+            : Array.isArray(detail)
+              ? detail.map((d: { msg?: string }) => d.msg || JSON.stringify(d)).join("; ")
+              : detail
+                ? JSON.stringify(detail)
+                : "Authentication failed.";
+        setError(msg);
       }
     } catch (err) {
       setError("Network error. Please ensure backend is running.");

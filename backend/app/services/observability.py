@@ -24,7 +24,10 @@ class LiveObservability:
                 services = db.query(ConnectedService).filter(ConnectedService.is_monitored == True).all()
                 for service in services:
                     telemetry = await self.probe_service(service)
-                    await self.sio.emit('telemetry_update', telemetry)
+                    try:
+                        await self.sio.emit("telemetry_update", telemetry)
+                    except Exception as emit_err:
+                        logger.error("telemetry_update emit failed: %s", emit_err)
             except Exception as e:
                 logger.error(f"Error in observability loop: {e}")
             finally:

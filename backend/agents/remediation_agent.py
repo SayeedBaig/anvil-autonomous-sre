@@ -20,8 +20,10 @@ class RemediationAgent:
         data = intelligence_data.get("data", {})
         meta = intelligence_data.get("metadata", {})
         
-        recommended_action = data.get("recommended_action", "investigate")
-        confidence = meta.get("confidence", 0.98)
+        recommended_action = (data.get("recommended_action") or "investigate").strip()
+        if not recommended_action:
+            recommended_action = "investigate"
+        confidence = float(meta.get("confidence", 0.98) or 0.0)
         
         message = f"DECISION: {recommended_action.replace('_', ' ').title()} strategy selected. Confidence: {confidence*100:.0f}%."
         

@@ -1,6 +1,6 @@
 import pytest
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, patch
 from agents.orchestrator import AutonomousOrchestrator
 
 @pytest.mark.asyncio
@@ -54,8 +54,11 @@ async def test_orchestrator_event_emission():
     with patch("asyncio.sleep", return_value=None):
         await orchestrator.emit_event(event)
         
-        mock_sio.emit.assert_called_with('agent_thought', {
-            "agent": "TestAgent",
-            "content": "Testing event",
-            "timestamp": "12:00:00"
-        })
+        mock_sio.emit.assert_called_with(
+            "agent_thought",
+            {
+                "agent": "TestAgent",
+                "content": "Testing event",
+                "timestamp": ANY,
+            },
+        )

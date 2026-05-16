@@ -2,6 +2,8 @@
 SENTINEL_ONE — Backend Integration Tests
 Tests authentication, infrastructure management, and incident flows.
 """
+import uuid
+
 import pytest
 from httpx import AsyncClient, ASGITransport
 from sqlalchemy import create_engine
@@ -147,12 +149,14 @@ async def test_me_without_token_fails(client):
 @pytest.fixture
 async def auth_token(client):
     """Returns a user JWT token for use in tests."""
+    email = f"infra_{uuid.uuid4().hex[:12]}@example.com"
     r = await client.post("/api/auth/signup", json={
-        "email": "infra_test@example.com",
+        "email": email,
         "password": "securepass123",
         "full_name": "Infra User",
         "role": "user"
     })
+    assert r.status_code == 200, r.text
     return r.json()["access_token"]
 
 

@@ -37,7 +37,11 @@ class ExecutionAgent:
             "message": "RECOVERY VERIFIED: System health 100%. Autonomous loop complete."
         })
 
-        if self.orchestrator.sio:
-            await self.orchestrator.sio.emit('event', {'type': 'INCIDENT_RESOLVED', 'data': {}})
+        sio = getattr(self.orchestrator, "sio", None)
+        if sio:
+            try:
+                await sio.emit("event", {"type": "INCIDENT_RESOLVED", "data": {}})
+            except Exception as e:
+                logger.error("[ExecutionAgent] INCIDENT_RESOLVED emit failed: %s", e)
 
         return True

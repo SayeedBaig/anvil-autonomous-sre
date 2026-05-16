@@ -20,11 +20,23 @@ class RCAAgent:
         data = intelligence_data.get("data", {})
         causal_chain = data.get("causal_chain", ["unknown_anomaly"])
         
-        await self.orchestrator.emit_event({
-            "agent": "RCAAgent",
-            "message": f"Analyzing cross-service correlations: {' -> '.join(causal_chain)}"
-        })
-        
+        await self.orchestrator.emit_event(
+            {
+                "agent": "RCAAgent",
+                "message": f"Analyzing cross-service correlations: {' -> '.join(causal_chain)}",
+            }
+        )
+
+        reasoning = (data.get("reasoning") or "").strip()
+        if reasoning:
+            trimmed = reasoning if len(reasoning) <= 700 else reasoning[:697] + "..."
+            await self.orchestrator.emit_event(
+                {
+                    "agent": "RCAAgent",
+                    "message": f"Operational intelligence correlation: {trimmed}",
+                }
+            )
+
         # Enhanced logic for root cause identification
         if "deployment" in causal_chain:
             message = "ROOT CAUSE IDENTIFIED: Regression detected in recently deployed microservice. Thread leak in connection pool identified as primary trigger."
@@ -50,7 +62,13 @@ class RCAAgent:
                 {"source": "leak", "target": "spike"}
             ]
         }
-        if self.orchestrator.sio:
-            await self.orchestrator.sio.emit('event', {'type': 'CAUSAL_GRAPH_UPDATE', 'data': causal_graph})
+        sio = getattr(self.orchestrator, "sio", None)
+        if sio:
+            try:
+                await sio.emit(
+                    "event", {"type": "CAUSAL_GRAPH_UPDATE", "data": causal_graph}
+                )
+            except Exception as e:
+                logger.error("[RCAAgent] CAUSAL_GRAPH_UPDATE emit failed: %s", e)
             
         return message

@@ -1,4 +1,3 @@
-import asyncio
 import time
 import logging
 
@@ -14,14 +13,14 @@ class MonitoringAgent:
         In a real scenario, this would involve complex thresholding or ML.
         """
         logger.info("[MonitoringAgent] Scanning telemetry streams...")
-        # Simulate detection logic
         if telemetry_data.get("latency", 0) > 2000:
-            logger.info("[MonitoringAgent] CRITICAL: Latency spike detected in checkout-service.")
+            svc = telemetry_data.get("service") or "checkout-service"
+            logger.info("[MonitoringAgent] CRITICAL: Latency spike detected on %s.", svc)
             event = {
                 "agent": "MonitoringAgent",
                 "status": "active",
-                "message": "Latency spike detected in checkout-service",
-                "timestamp": time.strftime("%H:%M:%S")
+                "message": f"Latency spike detected on {svc}",
+                "timestamp": time.strftime("%H:%M:%S"),
             }
             await self.orchestrator.emit_event(event)
             return True
