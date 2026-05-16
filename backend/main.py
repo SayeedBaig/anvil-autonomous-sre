@@ -14,7 +14,9 @@ from app.db import models
 from app.api.auth import router as auth_router
 from app.api.deps import get_current_active_user, get_current_active_admin
 from app.services.observability import LiveObservability
+from app.services.operational_intelligence import analyze_operational_intelligence
 from agents.orchestrator import AutonomousOrchestrator
+from init_db import init_db
 
 # Configure logging
 logging.basicConfig(
