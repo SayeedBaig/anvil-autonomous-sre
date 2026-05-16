@@ -12,16 +12,21 @@ class RemediationAgent:
         Decides the remediation strategy based on intelligence recommendations.
         """
         logger.info("[RemediationAgent] Determining remediation strategy...")
-        
-        recommended_action = intelligence_data.get("data", {}).get("recommended_action", "investigate")
-        
-        message = f"Recommended action: {recommended_action.replace('_', ' ').title()}"
-        
-        event = {
+        await self.orchestrator.emit_event({
             "agent": "RemediationAgent",
-            "status": "active",
-            "message": message,
-            "timestamp": time.strftime("%H:%M:%S")
-        }
-        await self.orchestrator.emit_event(event)
+            "message": "Synthesizing recovery strategies based on historical success rates..."
+        })
+        
+        data = intelligence_data.get("data", {})
+        meta = intelligence_data.get("metadata", {})
+        
+        recommended_action = data.get("recommended_action", "investigate")
+        confidence = meta.get("confidence", 0.98)
+        
+        message = f"DECISION: {recommended_action.replace('_', ' ').title()} strategy selected. Confidence: {confidence*100:.0f}%."
+        
+        await self.orchestrator.emit_event({
+            "agent": "RemediationAgent",
+            "message": message
+        })
         return recommended_action

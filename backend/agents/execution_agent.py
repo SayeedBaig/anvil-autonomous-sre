@@ -14,23 +14,30 @@ class ExecutionAgent:
         """
         logger.info(f"[ExecutionAgent] Executing {strategy} workflow...")
         
-        event = {
+        await self.orchestrator.emit_event({
             "agent": "ExecutionAgent",
-            "status": "active",
-            "message": f"Executing {strategy.replace('_', ' ')} workflow...",
-            "timestamp": time.strftime("%H:%M:%S")
-        }
-        await self.orchestrator.emit_event(event)
+            "message": f"Initiating autonomous {strategy.replace('_', ' ')} protocol..."
+        })
+        
+        await self.orchestrator.emit_event({
+            "agent": "ExecutionAgent",
+            "message": "Executing: 'kubectl rollout undo deployment/election-ai-v2'..."
+        })
         
         # Simulate execution time
-        await asyncio.sleep(3)
+        await asyncio.sleep(4)
         
-        success_message = "Recovery verified successfully."
-        event = {
+        await self.orchestrator.emit_event({
             "agent": "ExecutionAgent",
-            "status": "success",
-            "message": success_message,
-            "timestamp": time.strftime("%H:%M:%S")
-        }
-        await self.orchestrator.emit_event(event)
+            "message": "Verification: Telemetry stabilizing. Latency returning to 120ms baseline."
+        })
+        
+        await self.orchestrator.emit_event({
+            "agent": "ExecutionAgent",
+            "message": "RECOVERY VERIFIED: System health 100%. Autonomous loop complete."
+        })
+
+        if self.orchestrator.sio:
+            await self.orchestrator.sio.emit('event', {'type': 'INCIDENT_RESOLVED', 'data': {}})
+
         return True

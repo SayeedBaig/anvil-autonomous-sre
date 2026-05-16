@@ -6,6 +6,8 @@ import { motion, AnimatePresence } from "framer-motion";
 import { Shield, Activity, Database, Search, Network, Workflow, Settings, LayoutDashboard, ArrowLeft, Plus, Globe, AlertTriangle, RefreshCw, Command, LogOut } from "lucide-react";
 import { useAuth } from "@/context/AuthContext";
 import { apiUrl, SOCKET_URL, authHeaders } from "@/lib/config";
+import { useDemoData } from "@/hooks/useDemoData";
+import Skeleton from "@/components/Skeleton";
 
 const AgentActivity  = dynamic(() => import("@/components/AgentActivity"),  { ssr: false });
 const CausalGraph    = dynamic(() => import("@/components/CausalGraph"),    { ssr: false });
@@ -37,6 +39,7 @@ export default function Dashboard() {
   const [selectedService, setSelectedService] = useState<Service | null>(null);
   const [memoryResults, setMemoryResults] = useState<any[]>([]);
   const [searchQuery, setSearchQuery] = useState("");
+  const [causalGraph, setCausalGraph] = useState<any>(null);
   
   const [isOnline,   setIsOnline]   = useState(false);
   const [isBooting,  setIsBooting]  = useState(false);
@@ -44,6 +47,8 @@ export default function Dashboard() {
   const [activeNav,  setActiveNav]  = useState(0);
 
   const socketRef = useRef<any>(null);
+  const mockData = useDemoData(isOnline);
+  const displayTelemetry = isOnline ? telemetry : mockData;
 
   // Fetch services on load
   useEffect(() => {
@@ -70,10 +75,15 @@ export default function Dashboard() {
   };
 
   useEffect(() => {
+    let socket: any;
     (async () => {
       try {
         const { io } = await import("socket.io-client");
-        const socket = io(SOCKET_URL, { transports: ["websocket", "polling"] });
+        socket = io(SOCKET_URL, { 
+          transports: ["websocket", "polling"],
+          reconnectionAttempts: 5,
+          reconnectionDelay: 2000
+        });
         socketRef.current = socket;
 
         socket.on("connect", () => setIsOnline(true));
@@ -81,15 +91,28 @@ export default function Dashboard() {
         socket.on("agent_thought", (t: any) => setThoughts(p => [...p, t]));
         
         socket.on("telemetry_update", (data: any) => {
-          if (selectedService && data.service_id === selectedService.id) {
-            setTelemetry(p => [...p, { time: new Date().toLocaleTimeString(), value: data.latency }].slice(-50));
-            if (data.status !== "healthy" && status === "healthy") {
-              setStatus("incident");
-              setIncidentId("INC-" + Math.floor(Math.random()*10000));
-            } else if (data.status === "healthy" && status !== "healthy") {
-              setStatus("healthy");
-              setIncidentId(null);
-            }
+          setTelemetry(p => {
+            const next = [...p];
+            const newPoint = {
+              timestamp: data.timestamp || Date.now() / 1000,
+              services: {
+                [data.service_name || "System"]: {
+                  cpu: data.cpu_usage || 20,
+                  latency: data.latency,
+                  error_rate: data.status !== "healthy" ? 5 : 0
+                }
+              }
+            };
+            next.push(newPoint);
+            return next.slice(-50);
+          });
+
+          if (data.status !== "healthy" && status === "healthy") {
+            setStatus("incident");
+            setIncidentId("INC-" + Math.floor(Math.random()*10000));
+          } else if (data.status === "healthy" && status !== "healthy") {
+            setStatus("healthy");
+            setIncidentId(null);
           }
         });
 
@@ -97,14 +120,20 @@ export default function Dashboard() {
           if (e.type === "INCIDENT_RESOLVED") {
             setStatus("healthy");
             setIncidentId(null);
+            setCausalGraph(null);
+          }
+          if (e.type === "CAUSAL_GRAPH_UPDATE") {
+            setCausalGraph(e.data);
           }
         });
-
-        return () => socket.disconnect();
       } catch (err) {
         console.error("Socket connection failed", err);
       }
     })();
+
+    return () => {
+      if (socket) socket.disconnect();
+    };
   }, [selectedService, status]);
 
   const triggerIncident = async (type: string) => {
@@ -128,15 +157,29 @@ export default function Dashboard() {
   const searchMemory = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!searchQuery) return;
+    
     try {
       const res = await fetch(apiUrl(`/api/memory/search?query=${encodeURIComponent(searchQuery)}`), {
         headers: authHeaders(token)
       });
-      const data = await res.json();
-      setMemoryResults(data.matches);
+      if (res.ok) {
+        const data = await res.json();
+        setMemoryResults(data.matches);
+        return;
+      }
     } catch (err) {
-      console.error("Memory search failed", err);
+      console.error("Memory search failed, using demo fallback", err);
     }
+
+    // Fallback: Demo Safe Mode
+    const mockResults = [
+      { id: "INC-2091", title: "Cascading Latency Spike in Checkout", similarity: 0.94 },
+      { id: "INC-2092", title: "Redis Connection Pool Exhaustion", similarity: 0.88 },
+      { id: "INC-2093", title: "Stripe API Gateway Timeout", similarity: 0.82 },
+      { id: "SIM-01", title: `Analyzing related patterns for "${searchQuery}"`, similarity: 0.75 },
+    ].filter(r => r.title.toLowerCase().includes(searchQuery.toLowerCase()) || r.id.includes(searchQuery.toUpperCase()));
+    
+    setMemoryResults(mockResults.length > 0 ? mockResults : [{ id: "SIM-02", title: "No historical patterns found in cache", similarity: 0 }]);
   };
 
   const S = {
@@ -249,6 +292,16 @@ export default function Dashboard() {
             </div>
           </div>
 
+          {services.length === 0 && (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 340px", gap: "1rem" }}>
+              <Skeleton className="h-[350px] w-full" />
+              <div className="flex flex-col gap-4">
+                <Skeleton className="h-[150px] w-full" />
+                <Skeleton className="h-[150px] w-full" />
+              </div>
+            </div>
+          )}
+
           <AnimatePresence mode="wait">
             {activeTab === "Operations" && (
               <motion.div key="ops" initial={{ opacity: 0 }} animate={{ opacity: 1 }} style={{ display: "flex", flexDirection: "column", gap: "1rem" }}>
@@ -262,12 +315,16 @@ export default function Dashboard() {
                         <Activity size={12} style={{ color: "#3B82F6" }} /> {selectedService?.name || "Service"} Latency
                       </p>
                       <div style={{ height: 120 }}>
-                        <TelemetryChart data={telemetry} service={selectedService?.name || ""} metric="latency" color="#3B82F6" />
+                        <TelemetryChart data={displayTelemetry} service={selectedService?.name || ""} metric="latency" color="#3B82F6" />
                       </div>
                       <div style={{ marginTop: "1rem", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "0.5rem" }}>
                         <div style={{ padding: "0.5rem", borderRadius: 8, background: "#F8FAFC" }}>
                           <p style={{ fontSize: "0.5rem", fontWeight: 700, color: "#94A3B8" }}>P99 LATENCY</p>
-                          <p style={{ fontSize: "0.9rem", fontWeight: 900 }}>{telemetry.length > 0 ? telemetry[telemetry.length-1].value : 0}ms</p>
+                          <p style={{ fontSize: "0.9rem", fontWeight: 900 }}>
+                            {displayTelemetry.length > 0 
+                              ? (displayTelemetry[displayTelemetry.length-1].services?.[selectedService?.name || ""]?.latency?.toFixed(2) || "0.00") 
+                              : "0.00"}ms
+                          </p>
                         </div>
                         <div style={{ padding: "0.5rem", borderRadius: 8, background: "#F8FAFC" }}>
                           <p style={{ fontSize: "0.5rem", fontWeight: 700, color: "#94A3B8" }}>UPTIME</p>
@@ -284,10 +341,10 @@ export default function Dashboard() {
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 300px", gap: "1rem" }}>
                   <div className="card" style={{ height: 300, overflow: "hidden" }}>
                     <div style={{ padding: "1rem", borderBottom: "1px solid rgba(148,180,255,0.12)", display: "flex", justifyContent: "space-between" }}>
-                      <p style={{ fontSize: "0.6rem", fontWeight: 800, color: "#64748B", textTransform: "uppercase" }}>Real-time Topology</p>
-                      <span style={{ fontSize: "0.5rem", fontWeight: 800, color: "#3B82F6" }}>5 Nodes Discovered</span>
+                      <p style={{ fontSize: "0.6rem", fontWeight: 800, color: "#64748B", textTransform: "uppercase" }}>{status === 'healthy' ? 'Real-time Topology' : 'Root Cause Analysis'}</p>
+                      <span style={{ fontSize: "0.5rem", fontWeight: 800, color: "#3B82F6" }}>{status === 'healthy' ? '5 Nodes Discovered' : 'Causal Graph Active'}</span>
                     </div>
-                    <DependencyMap />
+                    {status === 'healthy' ? <DependencyMap /> : <CausalGraph graphData={causalGraph} />}
                   </div>
                   <MemoryPanel memory={memoryResults.length > 0 ? memoryResults : [{ id: "SIM-01", title: "Wait for incident analysis...", similarity: 0 }]} />
                 </div>

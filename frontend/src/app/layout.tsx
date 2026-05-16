@@ -3,6 +3,8 @@ import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
 
 import { Space_Grotesk, Inter_Tight } from "next/font/google";
+import { AuthProvider } from "@/context/AuthContext";
+import ErrorBoundary from "@/components/ErrorBoundary";
 
 const spaceGrotesk = Space_Grotesk({
   variable: "--font-display",
@@ -13,8 +15,6 @@ const interTight = Inter_Tight({
   variable: "--font-sans",
   subsets: ["latin"],
 });
-
-import { AuthProvider } from "@/context/AuthContext";
 
 export const metadata: Metadata = {
   title: "SENTINEL_ONE | Autonomous Infrastructure Intelligence",
@@ -32,9 +32,11 @@ export default function RootLayout({
         <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@300;400;500;600;700&family=Inter+Tight:ital,wght@0,100..900;1,100..900&family=Inter:wght@400;500;700&display=swap" />
       </head>
       <body className="min-h-full flex flex-col font-sans bg-[#0d0e12]">
-        <AuthProvider>
-          {children}
-        </AuthProvider>
+        <ErrorBoundary>
+          <AuthProvider>
+            {children}
+          </AuthProvider>
+        </ErrorBoundary>
       </body>
     </html>
   );

@@ -45,9 +45,18 @@ function formatAgent(name: string): string {
   return name.replace("Agent", "").toUpperCase();
 }
 
-function formatTime(ts: number): string {
+function formatTime(ts: any): string {
+  if (!ts) return "--:--:--";
   try {
-    return new Date(ts * 1000).toLocaleTimeString([], { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+    // Detect if ts is in seconds (e.g. < 10^11) or milliseconds
+    const date = new Date(ts < 1e11 ? ts * 1000 : ts);
+    if (isNaN(date.getTime())) return "--:--:--";
+    return date.toLocaleTimeString([], { 
+      hour12: false, 
+      hour: "2-digit", 
+      minute: "2-digit", 
+      second: "2-digit" 
+    });
   } catch {
     return "--:--:--";
   }
