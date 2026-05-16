@@ -25,10 +25,11 @@ class RemediationAgent:
             recommended_action = "investigate"
         confidence = float(meta.get("confidence", 0.98) or 0.0)
         
+        logger.info("[RemediationAgent] Rollback selected (recommended_action=%s)", recommended_action)
+
         message = f"DECISION: {recommended_action.replace('_', ' ').title()} strategy selected. Confidence: {confidence*100:.0f}%."
-        
-        await self.orchestrator.emit_event({
-            "agent": "RemediationAgent",
-            "message": message
-        })
+
+        await self.orchestrator.emit_event(
+            {"agent": "RemediationAgent", "message": message}
+        )
         return recommended_action

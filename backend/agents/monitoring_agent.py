@@ -15,7 +15,7 @@ class MonitoringAgent:
         logger.info("[MonitoringAgent] Scanning telemetry streams...")
         if telemetry_data.get("latency", 0) > 2000:
             svc = telemetry_data.get("service") or "checkout-service"
-            logger.info("[MonitoringAgent] CRITICAL: Latency spike detected on %s.", svc)
+            logger.info("[MonitoringAgent] Latency spike detected — raising incident signal")
             event = {
                 "agent": "MonitoringAgent",
                 "status": "active",

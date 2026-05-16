@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import threading
 import time
 from .monitoring_agent import MonitoringAgent
 from .context_agent import ContextAgent
@@ -17,6 +18,8 @@ _THOUGHT_PACE_SEC = 0.45
 class AutonomousOrchestrator:
     def __init__(self, sio=None):
         self.sio = sio
+        self._run_sync = threading.Lock()
+        self._active = False
         self.monitoring = MonitoringAgent(self)
         self.context = ContextAgent(self)
         self.security = SecurityAgent(self)
@@ -50,50 +53,96 @@ class AutonomousOrchestrator:
                 logger.error("[%s] Socket emit agent_thought failed: %s", agent_name, e)
         await asyncio.sleep(_THOUGHT_PACE_SEC)
 
+    async def _emit_ctrl(self, typ: str, data: dict):
+        """Realtime control plane (no narrative pacing)."""
+        sio = getattr(self, "sio", None)
+        if not sio:
+            return
+        try:
+            await sio.emit("event", {"type": typ, "data": data})
+        except Exception as e:
+            logger.error("[Orchestrator] control emit %s failed: %s", typ, e)
+
+    def try_begin_run(self) -> bool:
+        """Thread-safe claim before overlapping asyncio tasks can start."""
+        with self._run_sync:
+            if self._active:
+                return False
+            self._active = True
+            return True
+
+    def finish_run(self):
+        with self._run_sync:
+            self._active = False
+
     async def run_incident_simulation(self, incident_type, service):
         """
         Runs a complete autonomous 10-agent incident recovery simulation.
+        Overlapping triggers are rejected while a run is active (deterministic UX).
         """
+        if not self.try_begin_run():
+            logger.warning(
+                "[Orchestrator] Duplicate simulation rejected while run_active (service=%s)",
+                service,
+            )
+            await self._emit_ctrl(
+                "ORCHESTRATION_FINISHED",
+                {"service": service, "success": False, "rejected_duplicate": True},
+            )
+            await self.emit_event(
+                {
+                    "agent": "System",
+                    "message": "Orchestration already running — wait for completion before triggering again.",
+                }
+            )
+            return False
+
+        success = False
+        await self._emit_ctrl(
+            "ORCHESTRATION_STARTED",
+            {"service": service, "incident_type": incident_type},
+        )
         try:
             description = f"{incident_type} on {service} after deployment"
-            logger.info(f"STARTING ORCHESTRATION: {description}")
-            
+            logger.info("STARTING ORCHESTRATION: %s", description)
+
             # 1. Detection
-            logger.info(f"[MonitoringAgent] Latency spike detected on {service}")
+            logger.info("[MonitoringAgent] Latency spike detected on %s", service)
             await self.monitoring.detect_anomaly({"latency": 2500, "service": service})
-            
+
             # 2. Context Reconstruction
-            logger.info(f"[ContextAgent] Reconstructing operational memory for {service}")
+            logger.info("[ContextAgent] Reconstructing operational memory for %s", service)
             intelligence = await self.context.reconstruct_context(description)
-            
+
             # 3. Deployment Correlation
-            logger.info(f"[DeploymentAgent] Correlating deployment history for {service}")
+            logger.info("[DeploymentAgent] Correlating deployment history for %s", service)
             await self.deployment.check_deployment_history(service)
-            
+
             # 4. Security Audit
-            logger.info(f"[SecurityAgent] Verifying system integrity")
+            logger.info("[SecurityAgent] Verifying system integrity")
             await self.security.verify_integrity()
-            
+
             # 5. Causal Analysis (RCA)
-            logger.info(f"[RCAAgent] Root cause reconstructed from causal chain")
+            logger.info("[RCAAgent] Root cause reconstructed from causal chain")
             await self.rca.analyze_root_cause(intelligence)
-            
+
             # 6. Optimization Analysis
-            logger.info(f"[OptimizationAgent] Analyzing resource efficiency")
+            logger.info("[OptimizationAgent] Analyzing resource efficiency")
             await self.optimization.analyze_efficiency()
-            
+
             # 7. Remediation Decision
-            logger.info(f"[RemediationAgent] Rollback selected based on historical match")
+            logger.info("[RemediationAgent] Rollback selected based on historical match")
             strategy = await self.remediation.decide_strategy(intelligence)
-            
+            logger.info("[RemediationAgent] Strategy locked in: %s", strategy)
+
             # 8. Execution
-            logger.info(f"[ExecutionAgent] Executing recovery workflow: {strategy}")
+            logger.info("[ExecutionAgent] Executing recovery workflow: %s", strategy)
             await self.execution.execute_remediation(strategy)
-            
+
             # 9. Verification & Learning
-            logger.info(f"[ExecutionAgent] Recovery verified. Telemetry stabilized.")
+            logger.info("[ExecutionAgent] Recovery verified. Telemetry stabilized.")
             await self.learning.finalize()
-            
+
             # 10. System Resolution
             logger.info("[Orchestrator] Recovery lifecycle complete; emitting executive summary.")
             await self.emit_event(
@@ -114,6 +163,7 @@ class AutonomousOrchestrator:
             )
 
             logger.info("ORCHESTRATION COMPLETE: All agents finished successfully.")
+            success = True
             return True
         except Exception as e:
             logger.error("Orchestration Engine Failure: %s", str(e), exc_info=True)
@@ -124,3 +174,9 @@ class AutonomousOrchestrator:
                 }
             )
             return False
+        finally:
+            await self._emit_ctrl(
+                "ORCHESTRATION_FINISHED",
+                {"service": service, "success": success},
+            )
+            self.finish_run()

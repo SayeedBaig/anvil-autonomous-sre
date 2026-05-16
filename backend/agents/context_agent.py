@@ -44,6 +44,11 @@ class ContextAgent:
                     ),
                 }
             )
+            logger.info(
+                "[ContextAgent] Historical match found — operational intelligence confidence=%s engine=%s",
+                confidence,
+                engine,
+            )
         except Exception as e:
             logger.error("[ContextAgent] Intelligence pipeline failure: %s", e, exc_info=True)
 

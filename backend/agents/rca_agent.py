@@ -45,11 +45,14 @@ class RCAAgent:
         else:
             message = "ROOT CAUSE IDENTIFIED: Resource contention in cluster-node-74 detected via telemetry sidecars."
 
-        await self.orchestrator.emit_event({
-            "agent": "RCAAgent",
-            "message": message
-        })
-        
+        await self.orchestrator.emit_event(
+            {
+                "agent": "RCAAgent",
+                "message": message,
+            }
+        )
+        logger.info("[RCAAgent] Root cause reconstructed for chain=%s", causal_chain)
+
         # Emit a visual graph update for the frontend
         causal_graph = {
             "nodes": [

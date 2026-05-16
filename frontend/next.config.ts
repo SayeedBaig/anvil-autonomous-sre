@@ -2,7 +2,7 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   // Required for Docker/Cloud Run standalone deployment
-  output: "standalone",
+  
 
   images: {
     remotePatterns: [

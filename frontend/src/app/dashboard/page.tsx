@@ -43,6 +43,7 @@ export default function Dashboard() {
   
   const [isOnline,   setIsOnline]   = useState(false);
   const [isBooting,  setIsBooting]  = useState(false);
+  const [orchestrationBusy, setOrchestrationBusy] = useState(false);
   const [activeTab,  setActiveTab]  = useState("Operations");
   const [activeNav,  setActiveNav]  = useState(0);
 
@@ -136,6 +137,13 @@ export default function Dashboard() {
         });
 
         socket.on("event", (e: any) => {
+          if (e.type === "ORCHESTRATION_STARTED") {
+            setOrchestrationBusy(true);
+            setStatus((prev) => (prev === "healthy" ? "investigating" : prev));
+          }
+          if (e.type === "ORCHESTRATION_FINISHED") {
+            setOrchestrationBusy(false);
+          }
           if (e.type === "INCIDENT_RESOLVED") {
             setStatus("healthy");
             setIncidentId(null);
@@ -161,9 +169,9 @@ export default function Dashboard() {
   }, []);
 
   const triggerIncident = async (type: string) => {
-    if (!selectedService) return;
+    if (!selectedService || orchestrationBusy) return;
     setIsBooting(true);
-    setThoughts([]);
+    setOrchestrationBusy(true);
     try {
       const res = await fetch(apiUrl("/api/incidents/trigger"), {
         method: "POST",
@@ -181,11 +189,14 @@ export default function Dashboard() {
             timestamp: Date.now() / 1000,
           },
         ]);
+        setOrchestrationBusy(false);
         return;
       }
+      setThoughts([]);
       setStatus("investigating");
     } catch (err) {
       console.error("Failed to trigger incident", err);
+      setOrchestrationBusy(false);
     } finally {
       setIsBooting(false);
     }
@@ -308,7 +319,7 @@ export default function Dashboard() {
               <span style={{ fontSize: "0.65rem", fontWeight: 700, color: isOnline ? "#10B981" : "#F59E0B" }}>{isOnline ? "Live Engine" : "Offline"}</span>
             </div>
 
-            <button onClick={() => triggerIncident("latency_spike")} disabled={!selectedService} className="btn-primary" style={{ padding: "0.45rem 1.1rem", fontSize: "0.62rem" }}>
+            <button onClick={() => triggerIncident("latency_spike")} disabled={!selectedService || isBooting || orchestrationBusy} className="btn-primary" style={{ padding: "0.45rem 1.1rem", fontSize: "0.62rem" }}>
               Inject Latency Anomaly
             </button>
           </div>

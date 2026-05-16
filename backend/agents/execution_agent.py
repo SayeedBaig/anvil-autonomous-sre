@@ -37,6 +37,7 @@ class ExecutionAgent:
             "message": "RECOVERY VERIFIED: System health 100%. Autonomous loop complete."
         })
 
+        logger.info("[ExecutionAgent] Recovery verified — remediation simulation complete")
         sio = getattr(self.orchestrator, "sio", None)
         if sio:
             try:
